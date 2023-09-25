@@ -724,9 +724,13 @@ func getPortConfigAnnotation(service *v1.Service, port int) (portConfigAnnotatio
 }
 
 func getNodeInternalIP(node *v1.Node) string {
-	for _, addr := range node.Status.Addresses {
-		if addr.Type == v1.NodeInternalIP {
-			return addr.Address
+	if label_ip, found := node.Labels["linode-ip"]; found {
+		return label_ip
+	} else {
+		for _, addr := range node.Status.Addresses {
+			if addr.Type == v1.NodeInternalIP {
+				return addr.Address
+			}
 		}
 	}
 	return ""

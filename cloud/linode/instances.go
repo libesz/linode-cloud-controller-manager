@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -108,8 +109,17 @@ func (i *instances) lookupLinode(ctx context.Context, node *v1.Node) (*linodego.
 	sentry.SetTag(ctx, "provider_id", providerID)
 	sentry.SetTag(ctx, "node_name", node.Name)
 
-	if providerID != "" {
+	if strings.HasPrefix(providerID, providerIDPrefixLinode) {
 		id, err := parseProviderID(providerID)
+		if err != nil {
+			sentry.CaptureError(ctx, err)
+			return nil, err
+		}
+		sentry.SetTag(ctx, "linode_id", strconv.Itoa(id))
+
+		return i.linodeByID(id)
+	} else if strings.HasPrefix(providerID, providerIDPrefixIBM) {
+		id, err := getLinodeIDforSatellite(node, i.client)
 		if err != nil {
 			sentry.CaptureError(ctx, err)
 			return nil, err
@@ -179,7 +189,7 @@ func (i *instances) InstanceMetadata(ctx context.Context, node *v1.Node) (*cloud
 
 	// note that Zone is omitted as it's not a thing in Linode
 	meta := &cloudprovider.InstanceMetadata{
-		ProviderID:    fmt.Sprintf("%v%v", providerIDPrefix, linode.ID),
+		ProviderID:    fmt.Sprintf("%v%v", providerIDPrefixLinode, linode.ID),
 		NodeAddresses: addresses,
 		InstanceType:  linode.Type,
 		Region:        linode.Region,
