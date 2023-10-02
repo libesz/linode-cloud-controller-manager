@@ -1,0 +1,48 @@
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: private-ip
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: private-ip
+  template:
+    metadata:
+      labels:
+        app: private-ip
+    spec:
+      tolerations:
+      - operator: "Exists"
+      hostNetwork: true
+      serviceAccount: ccm-linode
+      terminationGracePeriodSeconds: 0
+      containers:
+      - name: private-ip
+        securityContext:
+          privileged: true
+        image:  alpine/k8s:1.25.3
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/bash
+        - -c
+        - |
+          export public_ip=$(echo $MY_NODE_NAME | sed s/-/./g)
+          export private_ip=$(curl https://api.linode.com/v4/linode/instances -H "Authorization: Bearer $TOKEN" -H "X-filter: {\"ipv4\": \"$public_ip\"}" | jq -r '.data[0].ipv4[1]')
+          ip a add ${private_ip}/17 dev $INTERFACE_NAME
+          ip a show dev "${INTERFACE_NAME}"
+          kubectl label node $MY_NODE_NAME linode-ip=${private_ip} --overwrite=true
+          tail -f /dev/null
+        env:
+        - name: TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.secretRef }}{{ .Values.secretRef.name | default "ccm-linode" }}{{ else }}"ccm-linode"{{ end }}
+              key: {{ if .Values.secretRef }}{{ .Values.secretRef.apiTokenRef | default "apiToken" }}{{ else }}"apiToken"{{ end }}
+        - name: "INTERFACE_NAME"
+          value: "enp0s3"
+        - name: MY_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
